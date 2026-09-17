@@ -1601,6 +1601,173 @@ function readS4(sheet){
   }).filter(r=>r&&r.banco);
 }
 
+function readS7(sheet){
+  /* Registro de cheques lxj -> CHEQ_LXJ (misma estructura que readS4) */
+  const raw=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null});
+  if(!raw.length) return;
+  let hRow=0;
+  for(let r=0;r<Math.min(raw.length,10);r++){
+    const filled=(raw[r]||[]).filter(c=>c!==null&&c!==undefined&&String(c).trim()!=='').length;
+    if(filled>=4){hRow=r;break;}
+  }
+  const header=(raw[hRow]||[]).map(c=>String(c||'').toLowerCase().trim());
+  const ci=names=>{for(const n of names){const i=header.findIndex(h=>h.includes(n));if(i>=0)return i;}return -1;};
+  const iBanco  = ci(['banco'])                          >=0?ci(['banco']):0;
+  const iFemis  = ci(['emision','emisión','emis'])       >=0?ci(['emision','emisión','emis']):1;
+  const iFvenc  = ci(['vencimiento','vencim'])           >=0?ci(['vencimiento','vencim']):2;
+  const iMes    = ci(['mes'])                            >=0?ci(['mes']):3;
+  const iConc   = ci(['concepto'])                       >=0?ci(['concepto']):4;
+  const iDeb    = ci(['débit','debit'])                  >=0?ci(['débit','debit']):5;
+  const iCred   = ci(['crédit','credit'])                >=0?ci(['crédit','credit']):6;
+  const iSaldo  = ci(['saldo'])                          >=0?ci(['saldo']):7;
+  const iNro    = ci(['numero','número','cheque','nro']) >=0?ci(['numero','número','cheque','nro']):10;
+  const iObs    = ci(['observ'])                         >=0?ci(['observ']):9;
+
+  CHEQ_LXJ=raw.slice(hRow+1).map(row=>{
+    if(!row) return null;
+    const banco=String(row[iBanco]||'').trim();
+    if(!banco||banco.toLowerCase()==='banco') return null;
+    return {
+      banco,
+      femis: fmtExcelDate(row[iFemis]),
+      fvenc: fmtExcelDate(row[iFvenc]),
+      mes:   String(row[iMes]||'').trim(),
+      conc:  String(row[iConc]||'').trim(),
+      deb:   toN(row[iDeb]),
+      cred:  toN(row[iCred]),
+      saldo: toN(row[iSaldo]),
+      nro:   String(row[iNro]||'').trim(),
+      obs:   String(row[iObs]||'').trim(),
+    };
+  }).filter(r=>r&&r.banco);
+}
+
+function readS8(sheet){
+  /* Costos indirectos -> window._CI_DATA
+     Columnas detectadas por texto de encabezado (AGRUPACIÓN/PROVEEDOR/SERVICIO),
+     ya que la hoja puede tener col A vacía y desplazar índices según el lector. */
+  const raw=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null});
+  if(!raw.length) return;
+  const mesesShort=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const tryDate=(cell)=>{
+    if(typeof cell!=='number') return null;
+    try{
+      const d=XLSX.SSF.parse_date_code(cell);
+      if(d && d.y && d.m) return mesesShort[d.m-1]+'-'+String(d.y).slice(-2);
+    }catch(e){}
+    return null;
+  };
+  let hRow=-1, cAgrup=-1, cProv=-1, cServ=-1;
+  for(let r=0;r<Math.min(raw.length,15);r++){
+    const row=raw[r]||[];
+    const idx=row.findIndex(c=>String(c||'').toUpperCase().includes('AGRUPACI'));
+    if(idx>=0){ hRow=r; cAgrup=idx; break; }
+  }
+  if(hRow<0) return;
+  const headerRow=raw[hRow];
+  const pIdx=headerRow.findIndex(c=>String(c||'').toUpperCase().includes('PROVEEDOR'));
+  const sIdx=headerRow.findIndex(c=>String(c||'').toUpperCase().includes('SERVICIO'));
+  cProv = pIdx>=0?pIdx:cAgrup+1;
+  cServ = sIdx>=0?sIdx:cAgrup+2;
+  const monthStartCol=Math.max(cAgrup,cProv,cServ)+1;
+  const monthCols=[];
+  for(let c=monthStartCol;c<headerRow.length;c++){
+    const key=tryDate(headerRow[c]);
+    if(key) monthCols.push({ci:c, key});
+  }
+  if(!monthCols.length) return;
+  const mesesKeys=monthCols.map(m=>m.key);
+
+  const colors={"IMPUESTOS":"#1D9E75","TELECOMUNICACIONES":"#085041","AGRUPACIÓN":"#5DCAA5",
+    "LICENCIAS CENTRALES TELEFONICAS":"#0F6E56","GASTOS DE SISTEMAS":"#9FE1CB",
+    "ALQUILERES":"#04342C","HONORARIOS PROFESIONALES":"#2E8B6E",
+    "GASTOS JUDICIALES":"#3DAA85","SERVICIOS":"#1A6B50",
+    "GASTOS FIJOS DEL PERSONAL":"#4CBFA0","GASTOS DE REPRESENTACION":"#0A4535",
+    "GASTOS RRHH":"#6DD4B5","GASTOS DE MANTENIMIENTO":"#156B52",
+    "GASTOS DE SEGUROS":"#2C9470","OTROS EGRESOS":"#08503F",
+    "GASTOS NO SOPORTADOS":"#1D9E75","INVERSIONES":"#085041"};
+
+  const agrupaciones={};
+  let currentAgrup=null;
+  for(let r=hRow+1;r<raw.length;r++){
+    const row=raw[r]||[];
+    const col1=row[cAgrup], col2=row[cProv], col3=row[cServ];
+    const agrupStr=(col1!==null&&col1!==undefined)?String(col1).trim():'';
+    const provStr =(col2!==null&&col2!==undefined)?String(col2).trim():'';
+    const servStr =(col3!==null&&col3!==undefined)?String(col3).trim():'';
+    if(agrupStr!=='' && agrupStr!=='AGRUPACIÓN' && !agrupStr.startsWith('TOTAL')) currentAgrup=agrupStr;
+    if(agrupStr==='' || agrupStr==='AGRUPACIÓN' || agrupStr.startsWith('TOTAL')) continue;
+    if(!currentAgrup) continue;
+    if(!provStr && !servStr) continue;
+    const keyItem=(provStr&&servStr)?(provStr+' / '+servStr):(provStr||(' / '+servStr));
+    if(!agrupaciones[currentAgrup]) agrupaciones[currentAgrup]={};
+    if(!agrupaciones[currentAgrup][keyItem]){
+      const zero={}; mesesKeys.forEach(m=>zero[m]=0);
+      agrupaciones[currentAgrup][keyItem]=zero;
+    }
+    monthCols.forEach(({ci,key})=>{
+      const val=toN(row[ci]);
+      if(val) agrupaciones[currentAgrup][keyItem][key]=Math.round((agrupaciones[currentAgrup][keyItem][key]+val)*100)/100;
+    });
+  }
+  window._CI_DATA={agrupaciones, meses:mesesKeys.slice(0,8), colors};
+}
+
+function readS9(sheet){
+  /* Sueldos convenio -> window._CONVENIO_TODOS / window._MESES_CONV
+     Fila de encabezado (fechas) y columna de concepto detectadas dinámicamente,
+     ya que la hoja puede tener col A / fila 1 vacías y desplazar índices según el lector. */
+  const raw=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null});
+  if(!raw.length) return;
+  const mesesShort=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const tryDate=(cell)=>{
+    if(typeof cell!=='number') return null;
+    try{
+      const d=XLSX.SSF.parse_date_code(cell);
+      if(d && d.y && d.m) return mesesShort[d.m-1]+'-'+String(d.y).slice(-2);
+    }catch(e){}
+    return null;
+  };
+  let bestRow=-1, bestCount=0;
+  for(let r=0;r<Math.min(raw.length,10);r++){
+    const row=raw[r]||[];
+    let cnt=0;
+    row.forEach(c=>{ if(tryDate(c)) cnt++; });
+    if(cnt>bestCount){ bestCount=cnt; bestRow=r; }
+  }
+  if(bestRow<0 || bestCount===0) return;
+  const headerRow=raw[bestRow];
+  const monthCols=[];
+  for(let c=0;c<headerRow.length;c++){
+    const key=tryDate(headerRow[c]);
+    if(key) monthCols.push({ci:c, key});
+  }
+  const labelCol=Math.max(0, Math.min(...monthCols.map(m=>m.ci))-1);
+  const mesesConv=monthCols.map(m=>m.key);
+  const convenioTodos=[];
+  let currentCat=null;
+  for(let r=bestRow+1;r<raw.length;r++){
+    const row=raw[r]||[];
+    const cell=row[labelCol];
+    if(cell===null||cell===undefined||String(cell).trim()==='') continue;
+    const cellStr=String(cell).trim();
+    const isCat=monthCols.every(({ci})=>{
+      const v=row[ci];
+      return v===null||v===undefined||v===0;
+    });
+    if(isCat){ currentCat=cellStr; continue; }
+    monthCols.forEach(({ci,key})=>{
+      const val=toN(row[ci]);
+      let ex=convenioTodos.find(x=>x.categoria===currentCat && x.mes===key);
+      if(!ex){ ex={categoria:currentCat, mes:key, items:[], total:0}; convenioTodos.push(ex); }
+      ex.items.push({concepto:cellStr, monto:val});
+      ex.total=Math.round((ex.total+val)*100)/100;
+    });
+  }
+  window._CONVENIO_TODOS=convenioTodos;
+  window._MESES_CONV=mesesConv;
+}
+
 /* ============================================================
    CARGA EXCEL
 ============================================================ */
@@ -1625,6 +1792,18 @@ document.getElementById('fInp').onchange=function(e){
       const sheetLXJ=wb.SheetNames.find(n=>n.trim().toLowerCase()==='facturas lxj'||n.trim().toLowerCase()==='facturas_lxj'||n.trim().toLowerCase().includes('lxj'));
       if(sheetLXJ) readS6(wb.Sheets[sheetLXJ]);
       else console.warn('Solapa "Facturas lxj" no encontrada. Solapas disponibles:',wb.SheetNames);
+      /* Buscar solapa "Registro de cheques lxj" */
+      const sheetChLXJ=wb.SheetNames.find(n=>{const t=n.trim().toLowerCase();return t.includes('cheque')&&t.includes('lxj');});
+      if(sheetChLXJ) readS7(wb.Sheets[sheetChLXJ]);
+      else console.warn('Solapa "Registro de cheques lxj" no encontrada. Solapas disponibles:',wb.SheetNames);
+      /* Buscar solapa "Costos indirectos" */
+      const sheetCostos=wb.SheetNames.find(n=>n.trim().toLowerCase().includes('costos'));
+      if(sheetCostos) readS8(wb.Sheets[sheetCostos]);
+      else console.warn('Solapa "Costos indirectos" no encontrada. Solapas disponibles:',wb.SheetNames);
+      /* Buscar solapa "Sueldos convenio" */
+      const sheetConv=wb.SheetNames.find(n=>{const t=n.trim().toLowerCase();return t.includes('sueldo')&&t.includes('conv');});
+      if(sheetConv) readS9(wb.Sheets[sheetConv]);
+      else console.warn('Solapa "Sueldos convenio" no encontrada. Solapas disponibles:',wb.SheetNames);
       SEL_MES=''; SEL_IDX='all';
       fillSelectors();
       renderAll();
