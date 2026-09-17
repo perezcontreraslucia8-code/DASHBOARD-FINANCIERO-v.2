@@ -1290,22 +1290,26 @@ function readS1(sheet){
   const headerRow = raw[0] || [];
 
   /* Columnas de día: cualquier celda de la fila 0 desde col B (idx≥1)
-     que tenga contenido (texto con mes O número) */
+     que tenga contenido (texto con mes O número), descartando fechas futuras
+     (la planilla suele traer encabezados pre-cargados para días sin datos aún) */
+  const hoyCorte=new Date(); hoyCorte.setHours(0,0,0,0);
   const dataCols = [];   // [{ci, label}]
   for(let c=1; c<headerRow.length; c++){
     const cell = headerRow[c];
     if(cell===null||cell===undefined||String(cell).trim()==='') continue;
     let label = '';
+    let cellDate = null;
     if(typeof cell==='number'){
       // serial de fecha Excel
       try{
         const d=XLSX.SSF.parse_date_code(cell);
-        if(d) label=d.d+'-'+MESES_ES[d.m-1];
+        if(d){ label=d.d+'-'+MESES_ES[d.m-1]; cellDate=new Date(d.y, d.m-1, d.d); }
         else label=String(Math.round(cell));
       }catch(e){ label=String(cell); }
     } else {
       label=String(cell).trim();
     }
+    if(cellDate && cellDate>hoyCorte) continue; // fecha futura sin datos aún, descartar
     dataCols.push({ci:c, label});
   }
 
