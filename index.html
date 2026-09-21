@@ -141,7 +141,6 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   th,td{padding:5px 6px!important}
   .br{flex-direction:column;gap:6px}
   .ba{text-align:left!important}
-  #btn-guardar{display:none!important}
   .hdr-r>div{display:none}
 }
 @media(max-width:400px){
@@ -3961,7 +3960,13 @@ function guardarConDatos(){
   const datos={
     F: F,
     COB: COB,
+    COB_USD: COB_USD,
+    COB_LXJ: COB_LXJ,
     CHEQ: CHEQ,
+    CHEQ_LXJ: CHEQ_LXJ,
+    CI_DATA: window._CI_DATA || null,
+    CONVENIO_TODOS: window._CONVENIO_TODOS || null,
+    MESES_CONV: window._MESES_CONV || null,
     fecha: new Date().toLocaleString('es-AR'),
     empresa: companyInput?companyInput.value:'',
     logoSrc: document.getElementById('logo-img').style.display!=='none'?document.getElementById('logo-img').src:'',
@@ -3980,8 +3985,10 @@ function guardarConDatos(){
 }
 
 function injectarDatos(html, jsonStr){
-  const TAG_START='';
-  const re=new RegExp(TAG_START+'[\\s\\S]*?'+TAG_END,'g');
+  const TAG_START='/* DATOS_EMBEBIDOS_START */';
+  const TAG_END='/* DATOS_EMBEBIDOS_END */';
+  const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const re=new RegExp('<scr'+'ipt>[\\s\\S]*?'+escRe(TAG_START)+'[\\s\\S]*?'+escRe(TAG_END)+'[\\s\\S]*?<\\/scr'+'ipt>','g');
   html=html.replace(re,'');
 
   /* No reemplazamos canvas — mantenemos interactividad completa */
@@ -3999,7 +4006,13 @@ function injectarDatos(html, jsonStr){
     'if(_D.empresa){var ci=document.getElementById("company-input");if(ci)ci.value=_D.empresa;}',
     'if(_D.logoSrc){var li=document.getElementById("logo-img");if(li){li.src=_D.logoSrc;li.style.display="block";document.getElementById("logo-emoji").style.display="none";}}',
     'if(_D.COB) COB=_D.COB;',
+    'if(_D.COB_USD) COB_USD=_D.COB_USD;',
+    'if(_D.COB_LXJ) COB_LXJ=_D.COB_LXJ;',
     'if(_D.CHEQ){CHEQ=_D.CHEQ;CHEQ.forEach(function(c){c.pendiente=Math.max(0,(c.cred||0)-(c.deb||0));c.estadoCh=(c.pendiente===0&&c.cred>0)?"pagado":"pendiente";});}',
+    'if(_D.CHEQ_LXJ){CHEQ_LXJ=_D.CHEQ_LXJ;CHEQ_LXJ.forEach(function(c){c.pendiente=Math.max(0,(c.cred||0)-(c.deb||0));c.estadoCh=(c.pendiente===0&&c.cred>0)?"pagado":"pendiente";});}',
+    'if(_D.CI_DATA) window._CI_DATA=_D.CI_DATA;',
+    'if(_D.CONVENIO_TODOS) window._CONVENIO_TODOS=_D.CONVENIO_TODOS;',
+    'if(_D.MESES_CONV) window._MESES_CONV=_D.MESES_CONV;',
     'if(F&&typeof buildByMonth==="function") buildByMonth();',
     'var ust=document.getElementById("ust");',
     'if(ust) ust.textContent="Datos del '+fechaStr+' — cargados automáticamente";',
