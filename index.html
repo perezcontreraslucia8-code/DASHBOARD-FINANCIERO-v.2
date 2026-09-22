@@ -1096,13 +1096,15 @@ function filtrarFacturadoHasta(arr){
   });
 }
 function filtrarCobradoHasta(arr){
-  /* Para cobrado: usa fechaEst (fecha real de cobro) si existe, sino fechaFact */
+  /* Para cobrado: usa fechaEstFmt (fecha real de cobro, siempre formateada dd/mm/yyyy)
+     si existe, sino fechaFact. OJO: fechaEst puede venir como número serial de Excel
+     en vez de string — por eso usamos siempre la versión ya formateada. */
   const fc=getFechaCorte();
   if(!fc) return arr;
   return arr.filter(r=>{
     if(r.sinCobro) return false; /* pendientes no cuentan como cobrado */
-    const fecha=r.fechaEst&&r.fechaEst!=='N/A'?r.fechaEst:r.fechaFact;
-    if(!fecha||fecha==='N/A') return false;
+    const fecha=r.fechaEstFmt&&r.fechaEstFmt!=='N/A'?r.fechaEstFmt:r.fechaFact;
+    if(!fecha||typeof fecha!=='string'||fecha==='N/A') return false;
     const p=fecha.split('/');
     if(p.length!==3) return false;
     return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]))<=fc;
